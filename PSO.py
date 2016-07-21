@@ -148,17 +148,54 @@ class mob:
         if item == 'y':
             return self.y
 
-    def fitPhase(self, nsim=100, minObsPerFilt=6, minTotalObs=20):
+    def _filtPhaseRangeCheck(self,m,a, minPhaseChange = 0.4, phaseBinNum = 3.0, minNumPerBin = 5):
 
+        delta_alpha = np.max(a) - np.min(a)
+        #print delta_alpha
+        if delta_alpha > minPhaseChange:
+            nGoodBin=0
+
+            bStep = delta_alpha/phaseBinNum
+            k = ((a-np.min(a))/bStep).astype('int')
+
+            w=np.where(k==phaseBinNum)
+            k[w]-=1
+
+            for j in range(int(phaseBinNum)):
+                if np.sum( np.where( k== j)[0]) >= minNumPerBin:
+                    nGoodBin+=1
+            if nGoodBin>=2: return True
+        return False
+
+    def fitPhase(self, nsim=100, minObsPerFilt=5, minTotalObs=20):
         n=0
         filts=[]
-        for i in ['g','r','i','z','y','w']:
-            if self[i] <>  None:
-                if len(self[i][0]) > minObsPerFilt:
-                    filts.append(i)
-                    n+=len(self[i][0])
 
-        if minTotalObs>n: return
+
+        #we want two checks
+        #1) can the alpha be measured? That's done with _filtPhaseRangeCheck
+        #2) does each filter have at least 6 observations?
+
+
+        #check 1
+        phaseCanBeFit=False
+        for f in ['g','r','i','z','y','w']:
+            if self[f] <>  None:
+                (t, m, dm, a, b, d) = self[f]
+                if self._filtPhaseRangeCheck(m,a):
+                    phaseCanBeFit=True
+                    break
+
+        #check 2
+        for f in ['g','r','i','z','y','w']:
+            if self[f] <>  None:
+                if len(self[f][0]) > minObsPerFilt:
+                    filts.append(f)
+                    n+=len(self[f][0])
+
+
+        if minTotalObs>n or not phaseCanBeFit: return
+
         Y=np.array([])
         dY=np.array([])
         Alphas=np.array([])
@@ -169,13 +206,7 @@ class mob:
             (t, m, dm, a, b, d) = self[f]
             h=m-5*np.log10(b*d)
 
-
-            #difft=(t[1:]-t[:-1])*24.
-            #diffm=m[1:]-m[:-1]
-            #DM=(dm[1:]**2+dm[:-1]**2)**0.5
-            #div=abs(diffm/difft)
-            #w=np.where((difft<1)&(div>1.8)&(diffm>2*DM))
-            #print self.trackID,w,m[w],difft[w]
+            self._filtPhaseRangeCheck(m,a)
 
             Y=np.concatenate([Y,h])
             dY=np.concatenate([dY,dm])
@@ -218,7 +249,7 @@ class mob:
             elif f=='r': c='r'
             elif f=='y': c='y'
             elif f=='i': c='b'
-            elif f=='z': c='b'
+            elif f=='z': c='m'
             elif f=='w': c='k'
 
             (t,m,dm,a,d,b) = self[f]
@@ -287,9 +318,14 @@ if __name__=="__main__":
     for i in range(len(psd)):
         psd[i].fitPhase()
         if psd[i].H['w']<>[-1, -1] and psd[i].H['g']<>[-1, -1] and psd[i].H['w'][0]>4:
-            #psd[i].displayPhaseCurve()
+            #if psd[i].alpha[0]<0: psd[i].displayPhaseCurve()
             gmw.append([psd[i].H['g'][0]-psd[i].H['w'][0], (psd[i].H['g'][1]**2 + psd[i].H['w'][1]**2)**0.5])
             alpha.append(psd[i].alpha)
+        if psd[i].trackID=='A00204':
+            psd[i].displayPhaseCurve()
+            print psd[i].H,psd[i].alpha,psd[i].mags
+            sys.exit()
+
     gmr = np.array(gmw)
     alpha = np.array(alpha)
     pyl.errorbar(gmr[:,0],alpha[:,0],xerr=gmr[:,1],yerr=alpha[:,1],linestyle='none', marker='s')
